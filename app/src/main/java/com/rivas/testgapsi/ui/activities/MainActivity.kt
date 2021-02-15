@@ -2,19 +2,20 @@ package com.rivas.testgapsi.ui.activities
 
 import android.app.SearchManager
 import android.content.Context
-import android.database.Cursor
+import android.content.Intent
 import android.os.Bundle
 import android.provider.SearchRecentSuggestions
+import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.view.inputmethod.InputMethodManager
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.SearchView
-import androidx.appcompat.widget.SearchView.OnQueryTextListener
 import androidx.core.view.isVisible
-import androidx.cursoradapter.widget.SimpleCursorAdapter
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.miguelcatalan.materialsearchview.MaterialSearchView
+import com.miguelcatalan.materialsearchview.MaterialSearchView.SearchViewListener
 import com.rivas.testgapsi.R
 import com.rivas.testgapsi.core.models.SearchResultModel
 import com.rivas.testgapsi.core.retrofit.APIClient
@@ -25,18 +26,81 @@ import kotlinx.android.synthetic.main.activity_main.*
 import org.jetbrains.anko.doAsync
 import org.jetbrains.anko.toast
 import org.jetbrains.anko.uiThread
+import org.json.JSONArray
 
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var apiInterface: APIInterface
+    var busquedas = JSONArray()
+    var searchView: MaterialSearchView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        searchViewCode()
         apiInterface = APIClient.client!!.create(APIInterface::class.java)
         getData()
+        getBusquedas()
+        if (Intent.ACTION_SEARCH == intent.action) {
+            Log.e("fasdf", "fasdfga")
+            intent.getStringExtra(SearchManager.QUERY)?.also { query ->
+                SearchRecentSuggestions(this, SuggestionProvider.AUTHORITY, SuggestionProvider.MODE)
+                    .saveRecentQuery(query, null)
+            }
+        }
     }
+
+    private fun getBusquedas() {
+        val preferencias = getSharedPreferences("busquedas", Context.MODE_PRIVATE)
+        busquedas= JSONArray(preferencias.getString("data", "[]"))
+        val array = arrayOfNulls<String>(busquedas.length())
+
+        for (i in 0 until busquedas.length() ) {
+            array[i] = busquedas.optString(i)
+        }
+        searchView?.setSuggestions(array);
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_search -> {
+                return  true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    override fun onBackPressed() {
+        if (searchView!!.isSearchOpen) {
+            searchView!!.closeSearch()
+        } else {
+            super.onBackPressed()
+        }
+    }
+
+    private fun searchViewCode() {
+        searchView = findViewById<MaterialSearchView>(R.id.search_view)
+        searchView?.setEllipsize(true)
+        searchView?.setOnQueryTextListener(object : MaterialSearchView.OnQueryTextListener {
+            override fun onQueryTextSubmit(query: String): Boolean {
+                getData(query)
+                busquedas.put(query)
+                val preferencias = getSharedPreferences("busquedas", Context.MODE_PRIVATE)
+                preferencias.edit().putString("data", busquedas.toString()).apply()
+                getBusquedas()
+                return false
+            }
+
+            override fun onQueryTextChange(newText: String): Boolean {
+                return false
+            }
+        })
+        searchView?.setOnSearchViewListener(object : SearchViewListener {
+            override fun onSearchViewShown() {}
+            override fun onSearchViewClosed() {}
+        })
+    } /*click alt+insert key */
 
     private fun getData(search: String = "") {
         progressBar.visibility = View.VISIBLE
@@ -56,6 +120,8 @@ class MainActivity : AppCompatActivity() {
 
     }
 
+
+
     private fun showData(response: SearchResultModel) {
         rvProducts.layoutManager = LinearLayoutManager(this)
         rvProducts.adapter = AdapterProducts(response.items, this)
@@ -65,47 +131,13 @@ class MainActivity : AppCompatActivity() {
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
         menuInflater.inflate(R.menu.menu, menu)
         val searchItem: MenuItem? = menu?.findItem(R.id.action_search)
-        val searchView: SearchView = searchItem?.actionView as SearchView
-        searchView.suggestionsAdapter = SimpleCursorAdapter(
-                this, android.R.layout.simple_list_item_1, null, arrayOf(SearchManager.SUGGEST_COLUMN_TEXT_1), intArrayOf(android.R.id.text1))
-        val queryTextListener: OnQueryTextListener = object : OnQueryTextListener {
-            override fun onQueryTextChange(newText: String): Boolean {
-                //doFilterAsync(mSearchString);
-                return true
-            }
-
-            override fun onQueryTextSubmit(query: String): Boolean {
-                //mSearchString = query
-                getData(query);
-                SearchRecentSuggestions(this@MainActivity, SuggestionProvider.AUTHORITY, SuggestionProvider.MODE)
-                        .saveRecentQuery(query, null)
-                hideKeyboard(searchView)
-                return true
-            }
-        }
-
-        val suggestionListener: SearchView.OnSuggestionListener = object : SearchView.OnSuggestionListener {
-            override fun onSuggestionSelect(position: Int): Boolean {
-                return false
-            }
-
-            override fun onSuggestionClick(position: Int): Boolean {
-                hideKeyboard(searchView)
-                val cursor: Cursor = searchView.suggestionsAdapter.getItem(position) as Cursor
-                val selection = cursor.getString(cursor.getColumnIndex(SearchManager.SUGGEST_COLUMN_TEXT_1))
-                searchView.setQuery(selection, true)
-                return true
-            }
-        }
-
-        searchView.setOnQueryTextListener(queryTextListener)
-        searchView.setOnSuggestionListener(suggestionListener)
+        searchView?.setMenuItem(searchItem);
         return super.onCreateOptionsMenu(menu)
     }
 
     fun Context.hideKeyboard(view: View) {
         val inputMethodManager =
-                getSystemService(AppCompatActivity.INPUT_METHOD_SERVICE) as InputMethodManager
+            getSystemService(AppCompatActivity.INPUT_METHOD_SERVICE) as InputMethodManager
         inputMethodManager.hideSoftInputFromWindow(view.windowToken, 0)
     }
 }
